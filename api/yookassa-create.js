@@ -48,7 +48,7 @@ module.exports = async (req, res) => {
 
     console.log(`Сумма: ${amount} руб.`);
 
-    // === ЧЕК С payment_subject ===
+    // === ЧЕК С payment_subject И payment_mode ===
     const receipt = {
       customer: {
         email: customerEmail || null,
@@ -63,12 +63,13 @@ module.exports = async (req, res) => {
             currency: 'RUB'
           },
           vat_code: 1,
-          payment_subject: 'service'  // ← ДОБАВЛЕН!
+          payment_subject: 'service',
+          payment_mode: 'full_payment'  // ← ДОБАВЛЕН!
         }
       ],
       tax_system_code: 1
     };
-    // ============================
+    // =======================================
 
     const paymentData = {
       amount: {

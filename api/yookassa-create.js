@@ -1,23 +1,12 @@
 const axios = require('axios');
-const crypto = require('crypto');
+const { v4: uuidv4 } = require('uuid');
 
-const SHOP_ID = process.env.YOOKASSA_SHOP_ID;
-const API_KEY = process.env.YOOKASSA_API_KEY;
-
-console.log('=== DEBUG ===');
-console.log('SHOP_ID:', SHOP_ID);
-console.log('API_KEY:', API_KEY);
-
-if (!SHOP_ID || !API_KEY) {
-  console.error('❌ ОШИБКА: Переменные окружения не установлены!');
-  console.error('Убедитесь, что в Vercel установлены YOOKASSA_SHOP_ID и YOOKASSA_API_KEY');
-}
-
-function generateIdempotenceKey() {
-  return crypto.randomUUID();
-}
+const YOOKASSA_SHOP_ID = process.env.YOOKASSA_SHOP_ID;
+const YOOKASSA_SECRET_KEY = process.env.YOOKASSA_SECRET_KEY;
+const YOOKASSA_API_URL = 'https://api.yookassa.ru/v3';
 
 module.exports = async (req, res) => {
+  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -40,8 +29,9 @@ module.exports = async (req, res) => {
       deliveries
     } = req.body;
 
-    console.log('📝 Создание платежа ЮKassa:', { orderId, customerName, planKey });
+    console.log('Создание платежа ЮKassa:', { orderId, customerName, planKey });
 
+    // Валидация
     if (!orderId || !customerName || !planKey || !deliveries || deliveries.length === 0) {
       return res.status(400).json({
         success: false,
@@ -49,6 +39,7 @@ module.exports = async (req, res) => {
       });
     }
 
+    // Тарифы
     const TARIFFS = {
       'basic': 500,
       'standard': 750,
@@ -56,28 +47,11 @@ module.exports = async (req, res) => {
     };
 
     const amount = TARIFFS[planKey] * deliveries.length;
-    
-    console.log(`💰 Сумма: ${amount} руб.`);
+    const idempotenceKey = uuidv4(); // Уникальный ключ для предотвращения дублей
 
-    const receipt = {
-      customer: {
-        email: customerEmail || null,
-        phone: customerPhone || null
-      },
-      items: [
-        {
-          description: `Подписка на цветы - ${deliveries.length} доставок (${planKey})`,
-          quantity: deliveries.length,
-          amount: {
-            value: amount.toFixed(2),
-            currency: 'RUB'
-          },
-          vat_code: 1
-        }
-      ],
-      tax_system_code: 1
-    };
+    console.log(`Сумма: ${amount} руб.`);
 
+    // Создание платежа
     const paymentData = {
       amount: {
         value: amount.toFixed(2),
@@ -85,65 +59,46 @@ module.exports = async (req, res) => {
       },
       confirmation: {
         type: 'redirect',
-        return_url: 'https://your-site.ru/success'
+        return_url: 'https://your-site.com/success' // URL возврата после оплаты
       },
-      capture: true,
+      capture: true, // Автоматическое списание
       description: `Подписка на цветы - ${deliveries.length} доставок`,
       metadata: {
         order_id: orderId,
         customer_name: customerName,
-        customer_email: customerEmail,
+        customer_email: customerEmail || '',
         customer_phone: customerPhone,
         plan: planKey,
         deliveries: JSON.stringify(deliveries)
-      },
-      receipt: receipt
+      }
     };
 
-    // === ВАЖНО: Проверьте кодирование! ===
-    const credentials = `${SHOP_ID}:${API_KEY}`;
-    console.log('🔐 Credentials (raw):', credentials);
-    
-    const auth = Buffer.from(credentials).toString('base64');
-    console.log('🔐 Auth (base64):', auth);
-    
-    const idempotenceKey = generateIdempotenceKey();
-    console.log('🔑 Idempotence-Key:', idempotenceKey);
-
-    console.log('📤 Отправка платежа в ЮKassa...');
-
     const response = await axios.post(
-      'https://api.yookassa.ru/v3/payments',
+      `${YOOKASSA_API_URL}/payments`,
       paymentData,
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Basic ${auth}`,
           'Idempotence-Key': idempotenceKey
+        },
+        auth: {
+          username: YOOKASSA_SHOP_ID,
+          password: YOOKASSA_SECRET_KEY
         }
       }
     );
 
-    const payment = response.data;
-
-    console.log('✅ Платёж создан:', payment.id);
-    console.log('📊 Статус:', payment.status);
-    console.log('🔗 Ссылка оплаты:', payment.confirmation.confirmation_url);
+    console.log('Платёж создан:', response.data.id);
 
     res.json({
       success: true,
-      orderId: orderId,
-      paymentId: payment.id,
-      paymentUrl: payment.confirmation.confirmation_url,
-      amount: amount,
-      currency: 'RUB'
+      paymentId: response.data.id,
+      paymentUrl: response.data.confirmation.confirmation_url,
+      status: response.data.status
     });
 
   } catch (error) {
-    console.error('❌ Ошибка создания платежа:');
-    console.error('Status:', error.response?.status);
-    console.error('Data:', error.response?.data);
-    console.error('Message:', error.message);
+    console.error('Ошибка создания платежа:', error.response?.data || error.message);
     
     res.status(500).json({
       success: false,

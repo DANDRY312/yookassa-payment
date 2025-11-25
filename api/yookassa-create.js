@@ -6,7 +6,6 @@ const YOOKASSA_SECRET_KEY = process.env.YOOKASSA_SECRET_KEY;
 const YOOKASSA_API_URL = 'https://api.yookassa.ru/v3';
 
 module.exports = async (req, res) => {
-  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -31,7 +30,6 @@ module.exports = async (req, res) => {
 
     console.log('Создание платежа ЮKassa:', { orderId, customerName, planKey });
 
-    // Валидация
     if (!orderId || !customerName || !planKey || !deliveries || deliveries.length === 0) {
       return res.status(400).json({
         success: false,
@@ -39,9 +37,8 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Тарифы
     const TARIFFS = {
-      'basic': 500,      // ← ИСПРАВЛЕНО: было 1, теперь 500
+      'basic': 500,
       'standard': 750,
       'premium': 1000
     };
@@ -51,8 +48,7 @@ module.exports = async (req, res) => {
 
     console.log(`Сумма: ${amount} руб.`);
 
-    // ===== ДОБАВЛЕН ЧЕК (RECEIPT) - ОБЯЗАТЕЛЬНО! =====
-    // Это требуется по закону 54-ФЗ об онлайн-кассах
+    // === ЧЕК С payment_subject ===
     const receipt = {
       customer: {
         email: customerEmail || null,
@@ -66,15 +62,14 @@ module.exports = async (req, res) => {
             value: amount.toFixed(2),
             currency: 'RUB'
           },
-          vat_code: 1  // 1 = НДС 18% (или 0 если нет НДС - уточните у вашего бухгалтера)
+          vat_code: 1,
+          payment_subject: 'service'  // ← ДОБАВЛЕН!
         }
       ],
-      tax_system_code: 1  // 1 = Упрощённая система налогообложения (УСН)
-                          // 0 = Общая система (ОСН) - уточните у бухгалтера!
+      tax_system_code: 1
     };
-    // ================================================
+    // ============================
 
-    // Создание платежа
     const paymentData = {
       amount: {
         value: amount.toFixed(2),
@@ -82,7 +77,7 @@ module.exports = async (req, res) => {
       },
       confirmation: {
         type: 'redirect',
-        return_url: 'https://wet-flowers.ru/success'  // ← ИЗМЕНИТЕ НА ВАШЕ ЗНАЧЕНИЕ
+        return_url: 'https://wet-flowers.ru/success'
       },
       capture: true,
       description: `Подписка на цветы - ${deliveries.length} доставок`,
@@ -94,11 +89,10 @@ module.exports = async (req, res) => {
         plan: planKey,
         deliveries: JSON.stringify(deliveries)
       },
-      receipt: receipt  // ← ДОБАВЛЕН ЧЕК
+      receipt: receipt
     };
 
     console.log('📤 Отправка платежа в ЮKassa...');
-    console.log('Данные платежа:', JSON.stringify(paymentData, null, 2));
 
     const response = await axios.post(
       `${YOOKASSA_API_URL}/payments`,

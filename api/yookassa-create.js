@@ -38,7 +38,7 @@ module.exports = async (req, res) => {
     }
 
     const TARIFFS = {
-      'basic': 8000,
+      'basic': 1,
       'standard': 11000,
       'premium': 14000
     };

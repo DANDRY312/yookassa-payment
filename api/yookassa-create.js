@@ -41,15 +41,38 @@ module.exports = async (req, res) => {
 
     // Тарифы
     const TARIFFS = {
-      'basic': 500,
+      'basic': 500,      // ← ИСПРАВЛЕНО: было 1, теперь 500
       'standard': 750,
       'premium': 1000
     };
 
     const amount = TARIFFS[planKey] * deliveries.length;
-    const idempotenceKey = uuidv4(); // Уникальный ключ для предотвращения дублей
+    const idempotenceKey = uuidv4();
 
     console.log(`Сумма: ${amount} руб.`);
+
+    // ===== ДОБАВЛЕН ЧЕК (RECEIPT) - ОБЯЗАТЕЛЬНО! =====
+    // Это требуется по закону 54-ФЗ об онлайн-кассах
+    const receipt = {
+      customer: {
+        email: customerEmail || null,
+        phone: customerPhone || null
+      },
+      items: [
+        {
+          description: `Подписка на цветы - ${deliveries.length} доставок (${planKey})`,
+          quantity: deliveries.length,
+          amount: {
+            value: amount.toFixed(2),
+            currency: 'RUB'
+          },
+          vat_code: 1  // 1 = НДС 18% (или 0 если нет НДС - уточните у вашего бухгалтера)
+        }
+      ],
+      tax_system_code: 1  // 1 = Упрощённая система налогообложения (УСН)
+                          // 0 = Общая система (ОСН) - уточните у бухгалтера!
+    };
+    // ================================================
 
     // Создание платежа
     const paymentData = {
@@ -59,19 +82,23 @@ module.exports = async (req, res) => {
       },
       confirmation: {
         type: 'redirect',
-        return_url: 'https://your-site.com/success' // URL возврата после оплаты
+        return_url: 'https://wet-flowers.ru/success'  // ← ИЗМЕНИТЕ НА ВАШЕ ЗНАЧЕНИЕ
       },
-      capture: true, // Автоматическое списание
+      capture: true,
       description: `Подписка на цветы - ${deliveries.length} доставок`,
       metadata: {
         order_id: orderId,
         customer_name: customerName,
         customer_email: customerEmail || '',
-        customer_phone: customerPhone,
+        customer_phone: customerPhone || '',
         plan: planKey,
         deliveries: JSON.stringify(deliveries)
-      }
+      },
+      receipt: receipt  // ← ДОБАВЛЕН ЧЕК
     };
+
+    console.log('📤 Отправка платежа в ЮKassa...');
+    console.log('Данные платежа:', JSON.stringify(paymentData, null, 2));
 
     const response = await axios.post(
       `${YOOKASSA_API_URL}/payments`,
@@ -88,7 +115,9 @@ module.exports = async (req, res) => {
       }
     );
 
-    console.log('Платёж создан:', response.data.id);
+    console.log('✅ Платёж создан:', response.data.id);
+    console.log('📊 Статус:', response.data.status);
+    console.log('🔗 URL оплаты:', response.data.confirmation.confirmation_url);
 
     res.json({
       success: true,
@@ -98,7 +127,10 @@ module.exports = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Ошибка создания платежа:', error.response?.data || error.message);
+    console.error('❌ Ошибка создания платежа:');
+    console.error('Status:', error.response?.status);
+    console.error('Data:', error.response?.data);
+    console.error('Message:', error.message);
     
     res.status(500).json({
       success: false,

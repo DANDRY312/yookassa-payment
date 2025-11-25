@@ -38,9 +38,9 @@ module.exports = async (req, res) => {
     }
 
     const TARIFFS = {
-      'basic': 1,
-      'standard': 750,
-      'premium': 1000
+      'basic': 8000,
+      'standard': 11000,
+      'premium': 14000
     };
 
     const amount = TARIFFS[planKey] * deliveries.length;
